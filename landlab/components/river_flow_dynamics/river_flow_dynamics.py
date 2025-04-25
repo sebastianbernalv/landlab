@@ -1678,6 +1678,12 @@ class river_flow_dynamics(Component):
         eta_at_N_1_at_B_1 = self._eta_at_N_1[open_boundary_nodes_1_backwards]
         eta_at_N_1_at_B_2 = self._eta_at_N_1[open_boundary_nodes_2_backwards]
 
+        ## Ignoring dry boundaries when there is not water around
+        h_at_N_at_B = self._h_at_N[self._open_boundary_nodes]
+        h_at_N_at_B_1 = self._h_at_N[open_boundary_nodes_1_backwards]
+        tempB1 = np.where(h_at_N_at_B < 1e-2, 0, 1)
+        tempB2 = np.where(h_at_N_at_B_1 < 1e-2, 0, 1)
+
         ## Computing boundary condition
         tempCalc1 = eta_at_N_at_B_1 - eta_at_N_1_at_B_1
         tempCalc2 = eta_at_N_1_at_B_1 - eta_at_N_1_at_B_2
@@ -1685,6 +1691,7 @@ class river_flow_dynamics(Component):
 
         Ce = np.where(tempCalc2 == 0, 0, tempCalc1 / tempCalc3 * (-self._dx / self._dt))
         Ce = np.where(tempCalc2 == 0, 0, Ce)
+        Ce = np.where(tempB1 + tempB2 == 0, -1, Ce)
 
         # eta[open_boundary_nodes] = tempCalc1/tempCalc2
         self._eta[self._open_boundary_nodes] = np.where(
@@ -1795,6 +1802,12 @@ class river_flow_dynamics(Component):
         vel_at_N_1_at_B_1 = self._vel_at_N_1[open_boundary_active_links_1_backwards]
         vel_at_N_1_at_B_2 = self._vel_at_N_1[open_boundary_active_links_2_backwards]
 
+        ## Ignoring dry boundaries when there is not water around
+        vel_at_N_at_B = self._vel_at_N[open_boundary_active_links]
+        vel_at_N_at_B_1 = self._vel_at_N[open_boundary_active_links_1_backwards]
+        tempB1 = np.where(vel_at_N_at_B == 0, 0, 1)
+        tempB2 = np.where(vel_at_N_at_B_1 == 0, 0, 1)
+
         ## Computing boundary condition
         tempCalc1 = vel_at_N_at_B_1 - vel_at_N_1_at_B_1
         tempCalc2 = vel_at_N_1_at_B_1 - vel_at_N_1_at_B_2
@@ -1802,6 +1815,7 @@ class river_flow_dynamics(Component):
 
         Ce = np.where(tempCalc2 == 0, 0, tempCalc1 / tempCalc3 * (-self._dx / self._dt))
         Ce = np.where(tempCalc2 == 0, 0, Ce)
+        Ce = np.where(tempB1 + tempB2 == 0, -1, Ce) # CHANGE 04/24
 
         self._vel[open_boundary_active_links] = np.where(
             Ce >= 0, vel_at_N_at_B_1, vel_at_N_at_B
