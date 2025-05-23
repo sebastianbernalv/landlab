@@ -228,7 +228,7 @@ class river_flow_dynamics(Component):
         fixed_entry_links=None,  # Link IDs where flow enters the domain
         entry_nodes_h_values=None,  # Water depth at nodes where flow enters the domain
         entry_links_vel_values=None,  # Water velocity at links where flow enters the domain
-        pcg_tolerance=1e-05,  # Preconditioned Conjugate Gradient convergence tolerance
+        pcg_tolerance=1e-09,  # Preconditioned Conjugate Gradient convergence tolerance
         pcg_max_iterations=None,  # Preconditioned Conjugate Gradient max iterations
         surface_water__elevation_at_N_1=None,  # Surf water elev at prev. time
         surface_water__elevation_at_N_2=None,  # Surf water elev at prev prev time
@@ -847,19 +847,25 @@ class river_flow_dynamics(Component):
                 self._grid.y_of_node[nodes_from_particle] + self._dy / 2,
             )
 
+            # # Getting velocity around the particle
+            # u_vel_at_x2 = np.where(
+            #     link_at_x2 >= 0, self._vel_at_N[link_at_x2], self._vel_at_N[link_at_x1]
+            # )
+            # u_vel_at_x1 = np.where(
+            #     link_at_x1 >= 0, self._vel_at_N[link_at_x1], self._vel_at_N[link_at_x2]
+            # )
+            # v_vel_at_y2 = np.where(
+            #     link_at_y2 >= 0, self._vel_at_N[link_at_y2], self._vel_at_N[link_at_y1]
+            # )
+            # v_vel_at_y1 = np.where(
+            #     link_at_y1 >= 0, self._vel_at_N[link_at_y1], self._vel_at_N[link_at_y2]
+            # )
+
             # Getting velocity around the particle
-            u_vel_at_x2 = np.where(
-                link_at_x2 >= 0, self._vel_at_N[link_at_x2], self._vel_at_N[link_at_x1]
-            )
-            u_vel_at_x1 = np.where(
-                link_at_x1 >= 0, self._vel_at_N[link_at_x1], self._vel_at_N[link_at_x2]
-            )
-            v_vel_at_y2 = np.where(
-                link_at_y2 >= 0, self._vel_at_N[link_at_y2], self._vel_at_N[link_at_y1]
-            )
-            v_vel_at_y1 = np.where(
-                link_at_y1 >= 0, self._vel_at_N[link_at_y1], self._vel_at_N[link_at_y2]
-            )
+            u_vel_at_x2 = self._vel_at_N[link_at_x2]
+            u_vel_at_x1 = self._vel_at_N[link_at_x1]
+            v_vel_at_y2 = self._vel_at_N[link_at_y2]
+            v_vel_at_y1 = self._vel_at_N[link_at_y1]
 
             # Calculating gradients for path line tracing
             gradient_x_direction = (u_vel_at_x2 - u_vel_at_x1) / self._dx
@@ -873,10 +879,10 @@ class river_flow_dynamics(Component):
                 y_at_y2 - self._y_of_particle
             )
             self._u_vel_of_particle = np.where(
-                self._u_vel_of_particle < 1e-10, 0, self._u_vel_of_particle
+                self._u_vel_of_particle < 1e-3, 0, self._u_vel_of_particle
             )
             self._v_vel_of_particle = np.where(
-                self._v_vel_of_particle < 1e-10, 0, self._v_vel_of_particle
+                self._v_vel_of_particle < 1e-3, 0, self._v_vel_of_particle
             )
 
             ### Calculation accoss x-direction
@@ -902,8 +908,8 @@ class river_flow_dynamics(Component):
             TAUx = np.where(self._u_vel_of_particle == 0, remaining_time, TAUx)
             TAUx = np.where(u_vel_at_x1 == 0, remaining_time, TAUx)
             TAUx = np.where(tempCalc5 < 0, remaining_time, TAUx)
-            TAUx = np.where(TAUx > self._dt, self._dt, TAUx)
-            TAUx = np.where(TAUx < 0, 0, TAUx)
+            TAUx = np.where(TAUx >= self._dt, self._dt, TAUx)
+            TAUx = np.where(TAUx <= 0, 0, TAUx)
 
             ### Calculation across y-direction
             # Avoiding divisions by zero
@@ -928,8 +934,8 @@ class river_flow_dynamics(Component):
             TAUy = np.where(self._v_vel_of_particle == 0, remaining_time, TAUy)
             TAUy = np.where(v_vel_at_y1 == 0, remaining_time, TAUy)
             TAUy = np.where(tempCalc5 < 0, remaining_time, TAUy)
-            TAUy = np.where(TAUy > self._dt, self._dt, TAUy)
-            TAUy = np.where(TAUy < 0, 0, TAUy)
+            TAUy = np.where(TAUy >= self._dt, self._dt, TAUy)
+            TAUy = np.where(TAUy <= 0, 0, TAUy)
 
             # Obtaining TAU = min(TAUx, TAUy, (dt - sum_partial_times))
             TAUx = abs(TAUx)
@@ -1056,12 +1062,14 @@ class river_flow_dynamics(Component):
         self._u_vel_at_v_links = np.mean(
             tempCalc1[self._grid.nodes_at_link[self._vertical_links]], axis=1
         )
+        #self._u_vel_at_v_links = np.round(self._u_vel_at_v_links / 1e-3) * 1e-3
 
         # Computing U-velocity (horizontal links) at V-velocity positions (vertical links)
         tempCalc1 = self._grid.map_mean_of_vertical_links_to_node(self._vel_at_N)
         self._v_vel_at_u_links = np.mean(
             tempCalc1[self._grid.nodes_at_link[self._horizontal_links]], axis=1
         )
+        #self._v_vel_at_u_links = np.round(self._v_vel_at_u_links / 1e-3) * 1e-3
 
         """ Setting A-faces """
         # Setting A-faces
@@ -1636,6 +1644,9 @@ class river_flow_dynamics(Component):
         self._eta = np.zeros_like(self._eta_at_N)
         self._eta[self._core_nodes] = pcg_results[0]
 
+        #self._eta[self._core_nodes] = np.trunc(self._eta[self._core_nodes]/1e-2)*1e-2
+        self._eta[self._core_nodes] = np.round(self._eta[self._core_nodes]/1e-2)*1e-2
+
         """ Boundary conditions
         Radiation Boundary Conditions of Roed & Smedstad (1984) applied on open boundaries
         Water surface elevation
@@ -1697,11 +1708,16 @@ class river_flow_dynamics(Component):
         self._eta[self._open_boundary_nodes] = np.where(
             Ce >= 0, eta_at_N_at_B_1, eta_at_N_at_B
         )
+        #self._eta = np.trunc(self._eta/1e-2)*1e-2
+        self._eta = np.round(self._eta/1e-2)*1e-2
+        
         self._eta = np.where(
             abs(self._eta) > abs(self._z), -self._z, self._eta
         )  # Correcting WSE below topographic elevation
 
         self._eta_at_links = self._grid.map_mean_of_link_nodes_to_link(self._eta)
+        #self._eta_at_links = np.trunc(self._eta_at_links/1e-2)*1e-2
+        self._eta_at_links = np.round(self._eta_at_links/1e-2)*1e-2
 
         # Corner nodes treatment
         self._eta[self._corner_nodes] = np.mean(
@@ -1737,10 +1753,14 @@ class river_flow_dynamics(Component):
             * self._h_at_N_at_links
             / self._a_links
         )
-        self._vel = self._g_links / self._a_links - tempCalc1 * tempB1
+        #self._vel = self._g_links / self._a_links - tempCalc1 * tempB1
+        self._vel = self._g_links / self._a_links - tempCalc1
+        
+        self._vel = np.round(self._vel/1e-3)*1e-3
+        self._vel = np.where(abs(self._vel) < 1e-3, 0, self._vel)
 
         # Only updating velocity on wet cells
-        self._vel = np.where(self._wet_links, self._vel, 0)
+        #self._vel = np.where(self._wet_links, self._vel, 0)
 
         """ Boundary conditions
         Radiation Boundary Conditions of Roed & Smedstad (1984) applied on open boundaries
@@ -1820,6 +1840,9 @@ class river_flow_dynamics(Component):
         self._vel[open_boundary_active_links] = np.where(
             Ce >= 0, vel_at_N_at_B_1, vel_at_N_at_B
         )
+        self._vel = np.round(self._vel/1e-3)*1e-3
+        self._vel = np.where(abs(self._vel) < 1e-3, 0, self._vel)
+        
 
         """ Updating water depth at links
         """
@@ -1847,6 +1870,8 @@ class river_flow_dynamics(Component):
         self._h_at_links = np.where(
             self._h_at_links < self._threshold_depth, 0, self._h_at_links
         )
+        #self._h_at_links = np.trunc(self._h_at_links/1e-2)*1e-2
+        self._h_at_links = np.round(self._h_at_links/1e-2)*1e-2
 
         # Updating wet links
         self._wet_links = np.where(
@@ -1907,6 +1932,8 @@ class river_flow_dynamics(Component):
         self._h[self._corner_nodes] = np.mean(
             self._h[self._adjacent_nodes_at_corner_nodes], axis=1
         )
+        #self._h = np.trunc(self._h/1e-2)*1e-2
+        self._h = np.round(self._h/1e-2)*1e-2
 
         # Updating wet nodes
         self._wet_nodes = np.where(self._h >= self._threshold_depth, True, False)
